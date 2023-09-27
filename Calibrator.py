@@ -281,7 +281,6 @@ with open(file_name, 'w') as file:
     file.write("Analyser: %s  Serial number: %s  Firmware version: %s\n" % (sa.model, sa.serial, sa.version))
     file.write("Signal gernator is %s\n" % sg1.serial)
     file.write(now.strftime("Calibration date %Y-%m-%d %H:%M:%S\n"))
-    sys.exit()
 
     input("Connect Sig Gen 1 to analyser and press enter to continue")
     
