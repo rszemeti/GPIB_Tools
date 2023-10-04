@@ -3,7 +3,6 @@ import math
 import re
 import sys
 import os
-import json
 from datetime import datetime
 import numpy as np
 from scipy.signal import find_peaks
@@ -13,6 +12,7 @@ from modules.AudioAnalyser import AudioAnalyser
 from modules.HP8590 import HPSA
 from modules.Data import ResultSet
 from modules.Data import Trace
+from modules.Config import Config
 
 import PySimpleGUI as sg
  
@@ -117,36 +117,6 @@ def plotPoints(graph,result,color='blue'):
         graph.draw_line((x1, y1), (x2, y2), color=color, width=1)
         
     window.refresh()       
-
-
-
-class Config:
-    def __init__(self):
-        self.analyserAddress = None
-        self.audioSource = None
-        self.sample_rate = None
-
-    def save_to_file(self, filename):
-        data = {
-            'analyserAddress': self.analyserAddress,
-            'audioSource': self.audioSource,
-            'sample_rate': self.sample_rate
-        }
-        with open(filename, 'w') as file:
-            json.dump(data, file)
-
-    @staticmethod
-    def load_from_file(filename):
-        try:
-            with open(filename, 'r') as file:
-                data = json.load(file)
-                config = Config()
-                config.analyserAddress = data.get('analyserAddress')
-                config.audioSource = data.get('audioSource')
-                config.sample_rate = data.get('sample_rate')
-                return config
-        except FileNotFoundError:
-            return Config()
         
 def config_audio_analyser(config,audio_analyser):
 

@@ -54,3 +54,4 @@ class ResultSet:
                 self.level = 0
                             
             self.traces = [Trace(**trace) for trace in data['traces']]
+    
