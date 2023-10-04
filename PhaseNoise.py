@@ -1,4 +1,3 @@
-import pyvisa
 import time
 import math
 import re
@@ -6,217 +5,16 @@ import sys
 import os
 import json
 from datetime import datetime
-from typing import List
 import numpy as np
 from scipy.signal import find_peaks
 from scipy.fft import fft
 
-import sounddevice as sd
-
+from modules.AudioAnalyser import AudioAnalyser
+from modules.HP8590 import HPSA
+from modules.Data import ResultSet
+from modules.Data import Trace
 
 import PySimpleGUI as sg
-
-class HPSA:
-    def __init__(self,rm,id):
-        self.id=id
-        self.rm=rm
-        self.inst = rm.open_resource('GPIB0::%d::INSTR' % (id))
-        self.model=self.inst.query("ID")
-        self.serial=self.inst.query("SER")
-        self.version=self.inst.query("REV")
-            
-    def lockBand(self,i):
-        self.inst.write("HNLOCK %d" % (i))
-        time.sleep(1)
-        
-    def unlockBand(self):
-        self.inst.write("HNLOCK OFF")
-        
-    def correctionOn(self):
-        self.inst.write("CAL ON")
-        
-    def correctionOff(self):
-        self.inst.write("CAL OFF")
-        
-    def markerNormal(self,f):
-        self.inst.write("MKN %0.3f GHZ" % (f))
-        
-    def markerTrackOn(self):
-        self.inst.write("MKTRACK ON")
-        
-    def setSpan(self,f):
-        self.inst.write("SP %d MHZ" % (f))
-        
-    def setBandwidth(self,f):
-        self.inst.write("RB %d MHZ" % (f))
-        
-    def preselectorPeak(self):
-        self.inst.write("PP*")
-
-    def preset(self):
-        str = self.inst.write("IP")
-        time.sleep(2)
-            
-    def setFreq(self,f):
-        str = self.inst.write("CF %f.3 GHZ" % (f))
-
-    def getPeakedMarkerLevel(self):
-        str = self.inst.query("PP*; MA")
-        return float(str)
-    
-    def getMarkerLevel(self):
-        str = self.inst.query("MA")
-        return float(str)
-    
-    def getAmpcor(self):
-        str = self.inst.query("AMPCOR?")
-        return str
-    
-    def setAmpcor(self,f,c):
-        self.inst.write("AMPCOR %0.3fGHZ %0.2fDB" % (f,c))
-        
-    def saveAmpcor(self):
-        self.inst.write("SAVET AMPCOR")
-
-    def readCalData(self):
-        self.inst.write("CAL FETCH")
-        str = self.inst.query("CAL DUMP")
-        return str
-
-    def readCat(self):
-        #self.inst.write("CAT *,INT")
-        str = self.inst.query("CAT *,INT")
-        return str
-
-    def getSig(self):
-        self.inst.write("RL 10.0DB");
-        self.inst.write("SNGLS;TS;")
-        time.sleep(1)
-        self.inst.write("MKPK;DONE;MKCF;")
-        time.sleep(1)
-        freq = float(self.inst.query("MKF?"))
-        lvl = float(self.inst.query("MKA?"))
-        self.pkLvl=lvl
-        self.freq=freq
-        return (freq,lvl)
-
-    def initSignal(self):
-        (freq,lvl) = self.getSig()
-        self.inst.write("RL %sDB" % lvl)
-        self.inst.write("SP 20KHZ")
-        (freq,lvl) = self.getSig()
-        return(freq,lvl)
-
-    def levelOffset(self,offset):
-        self.inst.write("RL %0.2fDB" % (self.pkLvl-offset))
-
-
-    def acquire(self,freq,span,levelOffset,count=5):
-        self.levelOffset(levelOffset)
-        self.inst.write("SP %dKHZ" % span)
-        bw=300
-        if(span==20):
-            self.inst.write("RBW 300HZ")
-            bw=602.6
-        if(span==100):
-            self.inst.write("RBW 1KHZ")
-            bw=955
-        if(span==1000):
-            self.inst.write("RBW 10KHZ")
-            bw=10964
-        if(span==5000):
-            self.inst.write("RBW 30KHZ")
-            bw=38018
-        self.inst.write("FA %dHZ; FB %dHZ" % (freq, freq+span*1000))
-        
-        self.inst.write("SNGLS;")
-        results = [self.getTrace() for _ in range(count)]
-        self.inst.write("CONTS;")   
-        return (bw,self.average_arrays(results))
-
-    def reset(self):
-        # Put analyser back into sensible state.
-        self.inst.write("RL %0.2fDB" % (self.pkLvl))
-        self.inst.write("SP 1MHZ")
-        self.inst.write("RBW AUTO")
-        self.inst.write("CF %dHZ" % self.freq)
-    
-    def average_arrays(self,arrays):
-        num_arrays = len(arrays)
-        num_elements = len(arrays[0])
-        
-        # Initialize result array with zeros
-        result = [0] * num_elements
-        
-        # Calculate sum of corresponding elements
-        for array in arrays:
-            for i, value in enumerate(array):
-                result[i] += value
-        
-        # Calculate average
-        result = [value / num_arrays for value in result]
-        return result
-
-    def getTrace(self):
-        trace = self.inst.query("TS;TRA?")
-        data_list = trace.split(',')
-        data_float = [float(item) for item in data_list if item]
-        return data_float
-
-class Trace:
-    def __init__(self, bw, points=None):
-        self.bw = bw
-        self.points = points if points is not None else []
-
-    def addPoint(self, point):
-        self.points.append(point)
-
-    def getPoints(self):
-        return self.points
-
-class ResultSet:
-    def __init__(self,startF,endF):
-        self.startF=startF
-        self.endF=endF
-        self.traces=[]
-
-    def addTrace(self, trace: Trace):
-        self.traces.append(trace)
-
-    def getTraces(self) ->List[Trace]:
-        return self.traces
-
-    def setFreq(self,freq):
-        self.freq=freq
-
-    def setLevel(self,lvl):
-        self.level=lvl
-
-    def save(self, filename):
-        data = {
-            'startF': self.startF,
-            'endF': self.endF,
-            'freq': self.freq,
-            'level': self.level,
-            'traces': [trace.__dict__ for trace in self.traces]
-        }
-        with open(filename, 'w') as file:
-            json.dump(data, file)
-
-    def load(self, filename):
-        with open(filename, 'r') as file:
-            data = json.load(file)
-            self.startF = data['startF']
-            self.endF = data['endF']
-            try:
-                self.freq = data['freq']
-                self.level = data['level']
-            except KeyError as e:
-                print(f"Missing key in JSON data: {e}")
-                self.freq = 1
-                self.level = 0
-                            
-            self.traces = [Trace(**trace) for trace in data['traces']]
  
 
 def map_to_log_scale(value, lower_bound, upper_bound, output_lower_bound, output_upper_bound):
@@ -320,41 +118,7 @@ def plotPoints(graph,result,color='blue'):
         
     window.refresh()       
 
-def acquirePlot(startF=1E3,endF=10E6,nAvg=1,addr=0):
-    result = ResultSet(startF,endF);
-    
-    rm = pyvisa.ResourceManager()
 
-    sa=HPSA(rm,addr)
-    (freq,lvl)=sa.initSignal()
-    result.setFreq(freq)
-    result.setLevel(lvl)
-
-    nAvg=1
-    fPlotted=startF
-    levOffset=10.0
-    freqOffset=startF
-    for span in [20,100,1000,5000]:
-        t = Trace(span)
-        if(span==1000):
-            levOffset=40.0
-        for c in range (0,3):
-            (bw,data)=sa.acquire(freq+freqOffset,span,levOffset,nAvg)
-            for i, value in enumerate(data):
-                f = (i * (span*1000/(len(data)-1)))+ freqOffset
-                if(f>fPlotted):
-                    fPlotted=f
-                    point = (f,getNoiseLevel(value,bw,lvl))
-                    t.addPoint(point)
-            result.addTrace(t)
-            freqOffset += span*1000
-            if(freqOffset>endF):
-                break
-            if(levOffset <= 20):
-                levOffset=30.0
-
-    sa.reset()
-    return result
 
 class Config:
     def __init__(self):
@@ -384,94 +148,6 @@ class Config:
         except FileNotFoundError:
             return Config()
         
-import sounddevice as sd
-
-
-class AudioAnalyser:
-
-    def __init__(self,config):
-        self.debug=False
-        self.duration = 5
-        self.sample_rate = config.sample_rate
-        self.channels = 1
-        self.startF=10
-        self.endF=20000
-        self.audio_data = np.array([])
-        self.devices = sd.query_devices()
-        self.device_list = []
-
-    # Define a callback function to capture audio
-    def audio_callback(self,indata, frames, time, status):
-        self.audio_data = np.append(self.audio_data, indata[:, 0])  # Assuming mono input
-
-    def hamming_window(self,data):
-        window = np.hamming(len(data))
-        return data * window
-
-    def acquire(self):
-        print("Acquiring audio data at %d sample rate for %d seconds" %(self.sample_rate,self.duration))
-        self.audio_data = np.array([])
-        # Start audio stream
-        with sd.InputStream(callback=self.audio_callback, channels=self.channels, samplerate=self.sample_rate):
-            sd.sleep(self.duration * 1000)  # Sleep for the specified duration in milliseconds
-
-        # Assuming audio_data contains your acquired samples
-        windowed_data = self.hamming_window(self.audio_data)
-        fft_result = fft(windowed_data)
-        
-        num_points = len(fft_result)
-        points_per_decade = 500
-
-        result=ResultSet(self.startF,self.endF)
-        
-        # Generate an array of frequencies from 10 Hz to 20,000 Hz (log scale)
-        frequencies = np.logspace(np.log10(self.startF), np.log10(self.endF), num=points_per_decade * 4)
-        indices = (frequencies / (self.sample_rate / num_points)).astype(int)
-        levels = [abs(fft_result[index]) for index in indices]
-        if(self.debug):
-            for frequency, level in zip(frequencies, 20 * np.log10(levels)):
-                print(f"Frequency: {frequency:.2f} Hz, Level: {level:.2f}")
-        points = [(frequency, 20 * np.log10(level)-80) for frequency, level in zip(frequencies, levels)]
-
-        t = Trace(50,points)
-        result.addTrace(t)
-        return result
-
-    def get_audio_devices(self):
-
-
-        for device in self.devices:
-            if device['max_input_channels'] > 0:
-                device_name = device['name']
-                self.device_list.append(f"{device_name}")
-
-        return self.device_list
-
-    def is_sample_rate_supported(self,device_index, sample_rate):
-        try:
-            with sd.InputStream(device=device_index, channels=1, samplerate=sample_rate):
-                pass
-            return True
-        except sd.PortAudioError:
-            return False
-
-    def get_supported_sample_rates(self,device_name):
-        supported_rates = []
-
-        for device_index, device in enumerate(self.devices):
-            if device['name'] == device_name:
-                supported_rates = [44100, 48000, 96000, 192000]  # Add other sample rates to this list if needed
-                supported_rates = [rate for rate in supported_rates if self.is_sample_rate_supported(device_index, rate)]
-                break
-
-        return supported_rates
-
-    def get_default_samplerate(self,device_name):
-        for device in self.devices:
-            if device['name'] == device_name:
-                return device['default_samplerate']
-    
-
 def config_audio_analyser(config,audio_analyser):
 
     layout = [
@@ -566,6 +242,7 @@ for c in range(6):
 window.refresh()
 
 audio_analyser = AudioAnalyser(config)
+sa=HPSA(config.analyserAddress)
 
 # Define a list of colors
 colours = ['blue', 'red', 'green', 'orange']
@@ -600,7 +277,7 @@ while True:
             progress_popup.finalize()  # Finalize the window
             progress_popup.refresh()
 
-            result = acquirePlot(1E3, 10E6, 1, config.analyserAddress)
+            result = sa.acquirePlot(1E3, 10E6, 1)
             plotPoints(graph, result, colours[colour_counter])
 
             colour_counter += 1
