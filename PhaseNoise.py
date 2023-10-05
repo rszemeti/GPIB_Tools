@@ -15,7 +15,7 @@ from modules.Data import Trace
 from modules.Config import Config
 
 import PySimpleGUI as sg
- 
+
 
 def map_to_log_scale(value, lower_bound, upper_bound, output_lower_bound, output_upper_bound):
     # Ensure the value is within the specified range
@@ -28,9 +28,6 @@ def map_to_log_scale(value, lower_bound, upper_bound, output_lower_bound, output
     
     mapped_value = ((log_value - log_lower) / (log_upper - log_lower)) * (output_upper_bound - output_lower_bound) + output_lower_bound
     return mapped_value+15
-
-def getNoiseLevel(value, bw,lvl):
-    return value - 10*math.log10(bw*1.3) -lvl +2.0
 
 def moving_average(data, window_size):
     smoothed_data = []
@@ -96,7 +93,7 @@ def find_peaks_derivative(data, threshold):
 def plotPoints(graph,result,color='blue'):
     # Plot the data points
     data_points = []
-    minF=10
+    minF=config.start_freq
     for trace in result.getTraces():
         for (f, level) in trace.getPoints():
             if(f>minF):
@@ -106,12 +103,12 @@ def plotPoints(graph,result,color='blue'):
     smoothed = triangular_window(resampled_data,12)
     
     for (f,level) in data_points:
-        graph.draw_point((map_to_log_scale(f, 10, 10000000, 0, 400), level), color='light grey', size=1)
+        graph.draw_point((map_to_log_scale(f, config.start_freq, config.end_freq, 0, 400), level), color='light grey', size=1)
 
     for i in range(len(smoothed) - 1):
-        x1 = map_to_log_scale(smoothed[i][0], 10, 10000000, 0, 400)
+        x1 = map_to_log_scale(smoothed[i][0], config.start_freq, config.end_freq, 0, 400)
         y1 = smoothed[i][1]
-        x2 = map_to_log_scale(smoothed[i+1][0], 10, 10000000, 0, 400)
+        x2 = map_to_log_scale(smoothed[i+1][0], config.start_freq, config.end_freq, 0, 400)
         y2 = smoothed[i+1][1]
 
         graph.draw_line((x1, y1), (x2, y2), color=color, width=1)
@@ -164,11 +161,31 @@ def config_rf_analyser(config):
 
     window.close()
     return values['-NUMBER-']
-    
+
+def draw_grid(graph,config):
+    # Draw horizontal grid lines
+    for y in range(graphTop, graphBottom-1, -10):
+        graph.draw_line((15, y), (415, y), color='lightgray')
+        graph.draw_text(y, (10, y), font='Any 8')
+
+    # Draw vertical grid lines
+    m=config.start_freq
+    mul=["Hz","0Hz","00Hz","KHz","0KHz","00KHz","M","0MHz"]
+    for c in range(int(math.log10(config.end_freq)) - int(math.log10(config.start_freq))):
+        for f in range(1,10):
+            x=map_to_log_scale(f*m, config.start_freq, config.end_freq, 0, 400)
+            graph.draw_line((x, graphTop), (x, graphBottom), color='lightgray')
+            if (f==1):
+                i = int(np.log10(m))
+                graph.draw_text(" %d%s" % (f,mul[i]), (x+6, graphBottom-3), font='Any 8')
+            else:
+                graph.draw_text(f, (x, graphBottom-3), font='Any 8')
+        m *= 10
+        
+
 
 config = Config.load_from_file('.config_phase_noise.json')
 print(vars(config))
-
 graphTop=-40
 graphBottom = -150
 
@@ -176,7 +193,7 @@ graphBottom = -150
 layout = [
     [sg.Menu([['File', ['Open File']],
         ['Config', ['Configure Audio Analyser', 'Configure RF Analyser']]])],  # Add a menu with 'Open File' option
-    [sg.Graph(canvas_size=(800, 600), graph_bottom_left=(0, graphBottom-5), graph_top_right=(415, graphTop+5), background_color='white', key='-GRAPH-')],
+    [sg.Graph(canvas_size=(800, 600), graph_bottom_left=(0, graphBottom-5), graph_top_right=(415, graphTop+5), background_color='white', enable_events=True, key='-GRAPH-')],
     [sg.Button('Acquire Data'),sg.Button('Save Data', disabled=True), sg.Button('Audio Data')]   
 ]
 
@@ -189,40 +206,40 @@ window.Finalize()
 
 # Clear the graph
 graph.erase()
-
-# Draw horizontal grid lines
-for y in range(graphTop, graphBottom-1, -10):
-    graph.draw_line((15, y), (415, y), color='lightgray')
-    graph.draw_text(y, (10, y), font='Any 8')
-
-# Draw vertical grid lines
-m=10
-mul=["Hz","0Hz","00Hz","KHz","0KHz","00KHz","M","0MHz"]
-for c in range(6):
-    for f in range(1,10):
-        x=map_to_log_scale(f*m, 10, 10000000, 0, 400)
-        graph.draw_line((x, graphTop), (x, graphBottom), color='lightgray')
-        if (f==1):
-            i = int(np.log10(m))
-            graph.draw_text(" %d%s" % (f,mul[i]), (x+6, graphBottom-3), font='Any 8')
-        else:
-            graph.draw_text(f, (x, graphBottom-3), font='Any 8')
-    m *= 10
-    
+draw_grid(graph,config)
+window.refresh()
+time.sleep(2)
+config.mode=("PLL")
+config.start_freq=10
+graph.erase()
+draw_grid(graph,config)
 window.refresh()
 
 audio_analyser = AudioAnalyser(config)
-sa=HPSA(config.analyserAddress)
+rf_analyser=HPSA(config.analyserAddress)
 
 # Define a list of colors
 colours = ['blue', 'red', 'green', 'orange']
 
 # Initialize a counter
 colour_counter = 0
+prev_cursor =None
 
 # Event loop
 while True:
     event, values = window.read()
+
+    if event == '-GRAPH-':
+        print("graph")
+        mouse_x, mouse_y = values['-GRAPH-']
+        print(mouse_x)
+
+        #if prev_cursor is not None:
+            #graph.delete_figure(prev_cursor)  # Remove previous cursor
+
+        prev_cursor = graph.draw_line((mouse_x, 0), (mouse_x, 400), color='red')  # Draw new cursor
+        window.refresh();
+
 
     if event == sg.WIN_CLOSED or event == 'Exit':
         break
@@ -239,16 +256,33 @@ while True:
                 colour_counter = 0
 
     if event == 'Acquire Data':  
-        print("Acquiring data!")
         progress_popup = None  # Initialize progress_popup variable
         try:
             # Display in progress message
-            progress_popup = sg.Window('', [[sg.Text('Acquiring RF Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
-            progress_popup.finalize()  # Finalize the window
-            progress_popup.refresh()
 
-            result = sa.acquirePlot(1E3, 10E6, 1)
-            plotPoints(graph, result, colours[colour_counter])
+            if(config.mode=='RF'):
+                progress_popup = sg.Window('', [[sg.Text('Acquiring RF Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
+                progress_popup.finalize()  # Finalize the window
+                progress_popup.refresh()
+                result = rf_analyser.acquire(config.start_freq, config.end_freq, 1)
+                progress_popup.close()  # Close progress popup after completion
+                plotPoints(graph, result, colours[colour_counter])
+            if(config.mode=='PLL'):
+                progress_popup = sg.Window('', [[sg.Text('Acquiring Audio Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
+                progress_popup.finalize()  # Finalize the window
+                progress_popup.refresh()
+                result = audio_analyser.acquire(config.start_freq, config.changeover, 1)
+                progress_popup.close()  # Close progress popup after completion
+                plotPoints(graph, result, colours[colour_counter])
+                progress_popup = sg.Window('', [[sg.Text('Acquiring RF Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
+                progress_popup.finalize()  # Finalize the window
+                progress_popup.refresh()
+                result = rf_analyser.acquire_baseband(config.changeover, config.end_freq, 1)
+                progress_popup.close()  # Close progress popup after completion
+                plotPoints(graph, result, colours[colour_counter])
+            else:
+                print("Mode not configured")
+
 
             colour_counter += 1
             if colour_counter >= len(colours):
@@ -257,7 +291,7 @@ while True:
             window['Save Data'].update(disabled=False) 
             window.refresh()  # Refresh the window to update the display
 
-            progress_popup.close()  # Close progress popup after completion
+            
         except Exception as e:
             progress_popup.close()  # Close progress popup in case of an error
             sg.popup_error(f"An error occurred: {e}")
@@ -277,7 +311,7 @@ while True:
             progress_popup.finalize()  # Finalize the window
             progress_popup.refresh()
             
-            result = audio_analyser.acquire()
+            result = audio_analyser.acquire(10,config.changeover,100)
             
             plotPoints(graph, result, colours[colour_counter])
             

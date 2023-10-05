@@ -5,6 +5,7 @@ from typing import List
 import numpy as np
 from scipy.signal import find_peaks
 from scipy.fft import fft
+from scipy.ndimage import gaussian_filter1d
 from modules.Data import ResultSet
 from modules.Data import Trace
 
@@ -14,11 +15,8 @@ class AudioAnalyser:
 
     def __init__(self,config):
         self.debug=False
-        self.duration = 5
         self.sample_rate = config.sample_rate
-        self.channels = 1
-        self.startF=10
-        self.endF=20000
+        self.channels = 2
         self.audio_data = np.array([])
         self.devices = sd.query_devices()
         self.device_list = []
@@ -30,39 +28,48 @@ class AudioAnalyser:
     def hamming_window(self,data):
         window = np.hamming(len(data))
         return data * window
+    
+    def gaussian_smooth(self, data, sigma):
+        return gaussian_filter1d(data, sigma)
 
-    def acquire(self):
-        print("Acquiring audio data at %d sample rate for %d seconds" %(self.sample_rate,self.duration))
+    def acquire(self, start_freq, end_freq, duration=5):
+        print(f"Acquiring audio data at {self.sample_rate} sample rate for {duration} seconds")
+
         self.audio_data = np.array([])
+
         # Start audio stream
         with sd.InputStream(callback=self.audio_callback, channels=self.channels, samplerate=self.sample_rate):
-            sd.sleep(self.duration * 1000)  # Sleep for the specified duration in milliseconds
+            sd.sleep(duration * 1000)  # Sleep for the specified duration in milliseconds
 
         # Assuming audio_data contains your acquired samples
         windowed_data = self.hamming_window(self.audio_data)
         fft_result = fft(windowed_data)
-        
-        num_points = len(fft_result)
-        points_per_decade = 500
+        fft_frequencies = [i * self.sample_rate / len(fft_result) for i in range(len(fft_result))]
 
-        result=ResultSet(self.startF,self.endF)
-        
-        # Generate an array of frequencies from 10 Hz to 20,000 Hz (log scale)
-        frequencies = np.logspace(np.log10(self.startF), np.log10(self.endF), num=points_per_decade * 4)
-        indices = (frequencies / (self.sample_rate / num_points)).astype(int)
-        levels = [abs(fft_result[index]) for index in indices]
-        if(self.debug):
-            for frequency, level in zip(frequencies, 20 * np.log10(levels)):
-                print(f"Frequency: {frequency:.2f} Hz, Level: {level:.2f}")
-        points = [(frequency, 20 * np.log10(level)-80) for frequency, level in zip(frequencies, levels)]
+        # Generate an array of frequencies exactly a decade apart
+        num_points = 500
+        frequencies = [10 ** (np.log10(start_freq) + i * (np.log10(end_freq) - np.log10(start_freq)) / (num_points - 1)) for i in range(num_points)]
 
-        t = Trace(50,points)
+        # Compute energies
+        index = 0
+        points=[]
+        peak=-500
+        for resampled_frequency in frequencies:
+            energy=0
+            while(fft_frequencies[index] < resampled_frequency):
+                energy += np.abs(fft_result[index])**2
+                index += 1
+            if(energy>0):
+                lvl = 20 * np.log10(np.sqrt(energy))-97
+                points.append((resampled_frequency, lvl))
+                if(lvl > peak):
+                    peak = lvl
+        result=ResultSet(start_freq,end_freq)
+        t = Trace(50, points)
         result.addTrace(t)
         return result
 
     def get_audio_devices(self):
-
-
         for device in self.devices:
             if device['max_input_channels'] > 0:
                 device_name = device['name']

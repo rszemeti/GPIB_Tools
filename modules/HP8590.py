@@ -109,8 +109,10 @@ class HPSA:
     def levelOffset(self,offset):
         self.inst.write("RL %0.2fDB" % (self.pkLvl-offset))
 
+    def getNoiseLevel(self,value, bw,lvl):
+        return value - 10*math.log10(bw*1.3) -lvl +2.0
 
-    def acquire(self,freq,span,levelOffset,count=5):
+    def acquire_sweep_data(self,freq,span,levelOffset,count=5):
         self.levelOffset(levelOffset)
         self.inst.write("SP %dKHZ" % span)
         bw=300
@@ -162,7 +164,7 @@ class HPSA:
         data_float = [float(item) for item in data_list if item]
         return data_float
     
-    def acquirePlot(self,startF=1E3,endF=10E6,nAvg=1):
+    def acquire(self,startF=1E3,endF=10E6,nAvg=1):
         result = ResultSet(startF,endF);
         
         (freq,lvl)=self.initSignal()
@@ -178,12 +180,47 @@ class HPSA:
             if(span==1000):
                 levOffset=40.0
             for c in range (0,3):
-                (bw,data)=self.acquire(freq+freqOffset,span,levOffset,nAvg)
+                (bw,data)=self.acquire_sweep_data(freq+freqOffset,span,levOffset,nAvg)
                 for i, value in enumerate(data):
                     f = (i * (span*1000/(len(data)-1)))+ freqOffset
                     if(f>fPlotted):
                         fPlotted=f
-                        point = (f,getNoiseLevel(value,bw,lvl))
+                        point = (f,self.getNoiseLevel(value,bw,lvl))
+                        t.addPoint(point)
+                result.addTrace(t)
+                freqOffset += span*1000
+                if(freqOffset>endF):
+                    break
+                if(levOffset <= 20):
+                    levOffset=30.0
+
+        self.reset()
+        return result
+
+    def acquire_baseband(self,startF=20E3,endF=10E6,nAvg=1):
+        result = ResultSet(startF,endF);
+
+        self.freq=9000
+        self.lvl=0
+        self.pkLvl=0
+        result.setFreq(9000)
+        result.setLevel(0)
+
+        nAvg=1
+        fPlotted=startF
+        levOffset=10.0
+        freqOffset=startF
+        for span in [20,100,1000,5000]:
+            t = Trace(span)
+            if(span==1000):
+                levOffset=40.0
+            for c in range (0,3):
+                (bw,data)=self.acquire_sweep_data(self.freq+freqOffset,span,levOffset,nAvg)
+                for i, value in enumerate(data):
+                    f = (i * (span*1000/(len(data)-1)))+ freqOffset
+                    if(f>fPlotted):
+                        fPlotted=f
+                        point = (f,self.getNoiseLevel(value,bw,self.lvl))
                         t.addPoint(point)
                 result.addTrace(t)
                 freqOffset += span*1000
