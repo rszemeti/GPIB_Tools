@@ -11,7 +11,7 @@ class Config:
         self.changeover=20E3
         
 
-    def save_to_file(self, filename):
+    def save_to_file(self, filename = '.config_phase_noise.json'):
         data = {
             'analyserAddress': self.analyserAddress,
             'audioSource': self.audioSource,
@@ -25,7 +25,7 @@ class Config:
             json.dump(data, file)
 
     @staticmethod
-    def load_from_file(filename):
+    def load_from_file(filename='.config_phase_noise.json'):
         try:
             with open(filename, 'r') as file:
                 data = json.load(file)

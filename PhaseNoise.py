@@ -162,7 +162,44 @@ def config_rf_analyser(config):
     window.close()
     return values['-NUMBER-']
 
+def config_system(config):
+    layout = [
+        [sg.Text('System Mode')],
+        [sg.Radio('RF with Spectrum Analyser', 'MODE', default=True, key='-RF-')],
+        [sg.Radio('PLL with Spectrum Analyser', 'MODE', key='-PLL_SPECTRUM-')],
+        [sg.Radio('PLL with Audio Analyser', 'MODE', key='-PLL_AUDIO-')],
+        [sg.Radio('PLL with Audio and RF Spectrum Analyser', 'MODE', key='-PLL_AUDIO_RF-')],
+        [sg.Button('OK')]
+    ]
+
+    window = sg.Window('System Mode', layout)
+
+    while True:
+        event, values = window.read()
+
+        if event == 'OK':
+            if values['-RF-']:
+                config.mode = 'RF'
+                config.start_freq=1E3
+                config.end_freq=10E6
+            elif values['-PLL_SPECTRUM-']:
+                config.mode = 'PLL-RF'
+                config.start_freq=10E3
+                config.end_freq=10E6
+            elif values['-PLL_AUDIO-']:
+                config.mode = 'PLL-AUDIO'
+                config.start_freq=10
+                config.end_freq=20E3
+            elif values['-PLL_AUDIO_RF-']:
+                config.mode = 'PLL-AUDIO-RF'
+                config.start_freq=10
+                config.end_freq=10E6
+            config.save_to_file()
+            window.close()
+            return
+
 def draw_grid(graph,config):
+    graph.erase()
     # Draw horizontal grid lines
     for y in range(graphTop, graphBottom-1, -10):
         graph.draw_line((15, y), (415, y), color='lightgray')
@@ -192,9 +229,9 @@ graphBottom = -150
 # Define the layout of the window
 layout = [
     [sg.Menu([['File', ['Open File']],
-        ['Config', ['Configure Audio Analyser', 'Configure RF Analyser']]])],  # Add a menu with 'Open File' option
+        ['Config', ['Configure System', 'Configure Audio Analyser', 'Configure RF Analyser']]])],  # Add a menu with 'Open File' option
     [sg.Graph(canvas_size=(800, 600), graph_bottom_left=(0, graphBottom-5), graph_top_right=(415, graphTop+5), background_color='white', enable_events=True, key='-GRAPH-')],
-    [sg.Button('Acquire Data'),sg.Button('Save Data', disabled=True), sg.Button('Audio Data')]   
+    [sg.Button('Acquire Data'),sg.Button('Save Data', disabled=True)]   
 ]
 
 # Create the window
@@ -205,13 +242,6 @@ graph = window['-GRAPH-']
 window.Finalize()
 
 # Clear the graph
-graph.erase()
-draw_grid(graph,config)
-window.refresh()
-time.sleep(2)
-config.mode=("PLL")
-config.start_freq=10
-graph.erase()
 draw_grid(graph,config)
 window.refresh()
 
@@ -267,14 +297,28 @@ while True:
                 result = rf_analyser.acquire(config.start_freq, config.end_freq, 1)
                 progress_popup.close()  # Close progress popup after completion
                 plotPoints(graph, result, colours[colour_counter])
-            if(config.mode=='PLL'):
+            if(config.mode=='PLL-AUDIO'):
                 progress_popup = sg.Window('', [[sg.Text('Acquiring Audio Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
                 progress_popup.finalize()  # Finalize the window
                 progress_popup.refresh()
                 result = audio_analyser.acquire(config.start_freq, config.changeover, 1)
                 progress_popup.close()  # Close progress popup after completion
                 plotPoints(graph, result, colours[colour_counter])
-                progress_popup = sg.Window('', [[sg.Text('Acquiring RF Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
+            if(config.mode=='PLL-RF'):
+                progress_popup = sg.Window('', [[sg.Text('Acquiring RF Baseband Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
+                progress_popup.finalize()  # Finalize the window
+                progress_popup.refresh()
+                result = rf_analyser.acquire_baseband(config.changeover, config.end_freq, 1)
+                progress_popup.close()  # Close progress popup after completion
+                plotPoints(graph, result, colours[colour_counter])
+            if(config.mode=='PLL-AUDIO-RF'):
+                progress_popup = sg.Window('', [[sg.Text('Acquiring Audio Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
+                progress_popup.finalize()  # Finalize the window
+                progress_popup.refresh()
+                result = audio_analyser.acquire(config.start_freq, config.changeover, 1)
+                progress_popup.close()  # Close progress popup after completion
+                plotPoints(graph, result, colours[colour_counter])
+                progress_popup = sg.Window('', [[sg.Text('Acquiring Baseband RF Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
                 progress_popup.finalize()  # Finalize the window
                 progress_popup.refresh()
                 result = rf_analyser.acquire_baseband(config.changeover, config.end_freq, 1)
@@ -282,7 +326,6 @@ while True:
                 plotPoints(graph, result, colours[colour_counter])
             else:
                 print("Mode not configured")
-
 
             colour_counter += 1
             if colour_counter >= len(colours):
@@ -299,32 +342,14 @@ while True:
             # Close progress popup if it's open
             if progress_popup is not None:
                 progress_popup.close()
-
-
-    if event == 'Audio Data':  
-        print("Audio data!")
-        progress_popup = None  # Initialize progress_popup variable
-        
-        try:
-            # Display in progress message
-            progress_popup = sg.Window('', [[sg.Text('Acquiring Audio Data...', text_color='white')]],background_color='black', no_titlebar=True, keep_on_top=True)
-            progress_popup.finalize()  # Finalize the window
-            progress_popup.refresh()
+                
+    if event == 'Configure System':
+        # Handle audio input configuration
+        mode = config.mode
+        config_system(config)
+        if(mode != config.mode):
+            draw_grid(graph,config)
             
-            result = audio_analyser.acquire(10,config.changeover,100)
-            
-            plotPoints(graph, result, colours[colour_counter])
-            
-            colour_counter += 1
-            if colour_counter >= len(colours):
-                colour_counter = 0
-        except Exception as e:
-            # pop up an error message
-            sg.popup_error(f"An error occurred: {e}")
-        finally:
-            # Close progress popup if it's open
-            if progress_popup is not None:
-                progress_popup.close()
 
     if event == 'Configure Audio Analyser':
         # Handle audio input configuration

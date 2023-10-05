@@ -1,1 +1,1 @@
-{"analyserAddress": 18, "audioSource": "Microphone (2- Scarlett 2i2 USB)", "sample_rate": 192000, "start_freq": 10, "end_freq": 10000000.0, "mode": "PLL", "changeover": 20000.0}
+{"analyserAddress": 18, "audioSource": "Microphone (2- Scarlett 2i2 USB)", "sample_rate": 192000, "start_freq": 1000.0, "end_freq": 10000000.0, "mode": "RF", "changeover": 20000.0}
