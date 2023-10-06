@@ -9,6 +9,7 @@ class Config:
         self.end_freq=10E6
         self.mode='RF'
         self.changeover=20E3
+        self.capture_time=3
         
 
     def save_to_file(self, filename = '.config_phase_noise.json'):
@@ -19,6 +20,7 @@ class Config:
             'start_freq': self.start_freq,
             'end_freq': self.end_freq,
             'mode': self.mode,
+            'capture_time': self.capture_time,
             'changeover': self.changeover
         }
         with open(filename, 'w') as file:
@@ -37,6 +39,7 @@ class Config:
                 config.end_freq = data.get('end_freq',10E6)
                 config.mode = data.get('mode',"RF")
                 config.changeover = data.get('changeover',20E3)
+                config.capture_time = data.get('capture_time',3)
                 return config
         except FileNotFoundError:
             return Config()

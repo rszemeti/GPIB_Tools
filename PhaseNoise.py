@@ -114,12 +114,15 @@ def plotPoints(graph,result,color='blue'):
         graph.draw_line((x1, y1), (x2, y2), color=color, width=1)
         
     window.refresh()       
-        
-def config_audio_analyser(config,audio_analyser):
 
+def is_valid_digit_input(input_string):
+    return input_string.isdigit() and 1 <= int(input_string) <= 100 or input_string == ""
+
+def config_audio_analyser(config, audio_analyser):
     layout = [
         [sg.Text('Audio Source:'), sg.InputCombo(audio_analyser.get_audio_devices(), key='-AUDIO-', default_value=config.audioSource, enable_events=True)],
-        [sg.Text('Supported Sample Rates:'), sg.InputCombo(audio_analyser.get_supported_sample_rates(config.audioSource), key='-SAMPLERATE-', size=(20, 10), default_value=audio_analyser.get_default_samplerate(config.audioSource), enable_events=True)],
+        [sg.Text('Supported Sample Rates:'), sg.InputCombo(audio_analyser.get_supported_sample_rates(config.audioSource), key='-SAMPLERATE-', size=(20, 10), default_value=str(config.sample_rate), enable_events=True)],  # Modified default_value
+        [sg.Text('Capture Time (in seconds):'), sg.InputText(key='-CAPTURETIME-', size=(3, 1), default_text=str(config.capture_time))],
         [sg.Button('OK')]
     ]
 
@@ -130,15 +133,19 @@ def config_audio_analyser(config,audio_analyser):
 
         if event == sg.WIN_CLOSED or event == 'OK':
             config.audioSource = values['-AUDIO-']
-            config.sample_rate = values['-SAMPLERATE-']
-            audio_analyser.sample_rate=int(config.sample_rate)
+            config.sample_rate = int(values['-SAMPLERATE-'])
+            
+            # Check if the input is within the specified range (1 to 100)
+            input_value = int(values['-CAPTURETIME-'])
+            if 1 <= input_value <= 100:
+                config.capture_time = input_value
+                
+            audio_analyser.sample_rate = int(config.sample_rate)
             config.save_to_file('.config_phase_noise.json')
             break
-        elif event == '-AUDIO-':  # Device selection event
-            print("audio")
+        elif event == '-AUDIO-':
             selected_device = values['-AUDIO-']
             sample_rates = audio_analyser.get_supported_sample_rates(selected_device)
-            print(sample_rates)
             window['-SAMPLERATE-'].update(values=sample_rates)
 
     window.close()
@@ -165,10 +172,10 @@ def config_rf_analyser(config):
 def config_system(config):
     layout = [
         [sg.Text('System Mode')],
-        [sg.Radio('RF with Spectrum Analyser', 'MODE', default=True, key='-RF-')],
-        [sg.Radio('PLL with Spectrum Analyser', 'MODE', key='-PLL_SPECTRUM-')],
-        [sg.Radio('PLL with Audio Analyser', 'MODE', key='-PLL_AUDIO-')],
-        [sg.Radio('PLL with Audio and RF Spectrum Analyser', 'MODE', key='-PLL_AUDIO_RF-')],
+        [sg.Radio('RF with Spectrum Analyser', 'MODE', default=(config.mode == 'RF'), key='-RF-')],
+        [sg.Radio('PLL with Spectrum Analyser', 'MODE', default=(config.mode == 'PLL-RF'), key='-PLL_SPECTRUM-')],
+        [sg.Radio('PLL with Audio Analyser', 'MODE', default=(config.mode == 'PLL-AUDIO'), key='-PLL_AUDIO-')],
+        [sg.Radio('PLL with Audio and RF Spectrum Analyser', 'MODE', default=(config.mode == 'PLL-AUDIO-RF'), key='-PLL_AUDIO_RF-')],
         [sg.Button('OK')]
     ]
 
@@ -301,7 +308,7 @@ while True:
                 progress_popup = sg.Window('', [[sg.Text('Acquiring Audio Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
                 progress_popup.finalize()  # Finalize the window
                 progress_popup.refresh()
-                result = audio_analyser.acquire(config.start_freq, config.changeover, 1)
+                result = audio_analyser.acquire(config.start_freq, config.changeover, config.capture_time)
                 progress_popup.close()  # Close progress popup after completion
                 plotPoints(graph, result, colours[colour_counter])
             if(config.mode=='PLL-RF'):
@@ -315,7 +322,7 @@ while True:
                 progress_popup = sg.Window('', [[sg.Text('Acquiring Audio Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)
                 progress_popup.finalize()  # Finalize the window
                 progress_popup.refresh()
-                result = audio_analyser.acquire(config.start_freq, config.changeover, 1)
+                result = audio_analyser.acquire(config.start_freq, config.changeover, config.capture_time)
                 progress_popup.close()  # Close progress popup after completion
                 plotPoints(graph, result, colours[colour_counter])
                 progress_popup = sg.Window('', [[sg.Text('Acquiring Baseband RF Data...', text_color='white')]], background_color='black', no_titlebar=True, keep_on_top=True)

@@ -33,6 +33,9 @@ class AudioAnalyser:
         return gaussian_filter1d(data, sigma)
 
     def acquire(self, start_freq, end_freq, duration=5):
+        reference_duration =5
+        correction = 20 * np.log10(reference_duration / duration)
+        print("Correction: %0.2f" % correction)
         print(f"Acquiring audio data at {self.sample_rate} sample rate for {duration} seconds")
 
         self.audio_data = np.array([])
@@ -60,7 +63,9 @@ class AudioAnalyser:
                 energy += np.abs(fft_result[index])**2
                 index += 1
             if(energy>0):
-                lvl = 20 * np.log10(np.sqrt(energy))-97
+                lvl = (20 * np.log10(np.sqrt(energy)))-97
+                # Normalize the level based on the reference duration
+                lvl += correction
                 points.append((resampled_frequency, lvl))
                 if(lvl > peak):
                     peak = lvl
